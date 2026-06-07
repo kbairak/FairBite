@@ -12,6 +12,7 @@ let NUM_RESTAURANTS = 10;
 let ORDER_RATE = 0.354; // orders per sim-min  (≈480 orders per 16-hour day)
 let PREP_STDDEV_MINUTES = 10; // standard deviation of preparation time
 let SIM_SPEED = 4800; // sim-seconds per real-second  (60 → 1 real-s = 1 sim-min)
+let MAX_BATCH_SIZE = 1; // max orders carried simultaneously per courier (1 = single-stop)
 
 // ═══════════════════════════════════════════════════════════════════
 //  DERIVED
@@ -64,6 +65,8 @@ let courierIdSeq = 0;
 // Running totals for metrics
 let totalDelayMin = 0; // Σ max(0, pickedUpAt − readyAt) over completed orders
 let totalOccupiedMin = 0; // Σ non-idle courier-minutes across all couriers
+let totalCarryingMin = 0; // Σ courier-minutes carrying ≥1 orders
+let totalMultiCarryMin = 0; // Σ courier-minutes carrying >1 orders simultaneously
 
 // ═══════════════════════════════════════════════════════════════════
 //  INIT
@@ -75,6 +78,8 @@ function reset() {
   orderSeq = 0;
   totalDelayMin = 0;
   totalOccupiedMin = 0;
+  totalCarryingMin = 0;
+  totalMultiCarryMin = 0;
   unclaimedOrders = [];
   activeOrders = [];
   completedOrders = 0;
@@ -95,9 +100,8 @@ function reset() {
     x: Math.random() * CANVAS_SIZE,
     y: Math.random() * CANVAS_SIZE,
     state: "idle",
-    order: null,
-    destX: 0,
-    destY: 0,
+    stops: [],
+    carrying: [],
     retiring: false,
   }));
 
@@ -125,6 +129,7 @@ function paramsKey() {
     "T" + AVG_TRAVEL_MINUTES + "m",
     "O" + Math.round(ORDER_RATE * 960) + "/d",
     "P" + AVG_PREP_MINUTES + "±" + PREP_STDDEV_MINUTES + "m",
+    "B" + MAX_BATCH_SIZE,
   ].join(" ");
 }
 
@@ -141,7 +146,7 @@ function saveStats() {
   runs[key] = {
     params: {
       NUM_RESTAURANTS, NUM_COURIERS, AVG_TRAVEL_MINUTES,
-      ORDER_RATE, AVG_PREP_MINUTES, PREP_STDDEV_MINUTES,
+      ORDER_RATE, AVG_PREP_MINUTES, PREP_STDDEV_MINUTES, MAX_BATCH_SIZE,
     },
     metrics: { efficiency, avgDelay, utilization },
   };
@@ -156,6 +161,7 @@ function applyParams(params) {
   ORDER_RATE          = params.ORDER_RATE;
   AVG_PREP_MINUTES    = params.AVG_PREP_MINUTES;
   PREP_STDDEV_MINUTES = params.PREP_STDDEV_MINUTES;
+  MAX_BATCH_SIZE      = params.MAX_BATCH_SIZE ?? 1;
   COURIER_SPEED       = (0.5214 * CANVAS_SIZE) / AVG_TRAVEL_MINUTES;
 
   document.getElementById("slider-travel").value = AVG_TRAVEL_MINUTES;
@@ -166,6 +172,8 @@ function applyParams(params) {
   document.getElementById("p-prep-mean").textContent = AVG_PREP_MINUTES + " min";
   document.getElementById("slider-prep-stddev").value = PREP_STDDEV_MINUTES;
   document.getElementById("p-prep-stddev").textContent = "± " + PREP_STDDEV_MINUTES + " min";
+  document.getElementById("slider-batch").value = MAX_BATCH_SIZE;
+  document.getElementById("p-batch").textContent = MAX_BATCH_SIZE;
 
   saveParams();
   reset();
@@ -230,6 +238,7 @@ function saveParams() {
   localStorage.setItem("fa_AVG_PREP_MINUTES",    AVG_PREP_MINUTES);
   localStorage.setItem("fa_PREP_STDDEV_MINUTES", PREP_STDDEV_MINUTES);
   localStorage.setItem("fa_SIM_SPEED",           SIM_SPEED);
+  localStorage.setItem("fa_MAX_BATCH_SIZE",      MAX_BATCH_SIZE);
 }
 
 function init() {
@@ -245,6 +254,7 @@ function init() {
   AVG_PREP_MINUTES    = ls("fa_AVG_PREP_MINUTES",    AVG_PREP_MINUTES);
   PREP_STDDEV_MINUTES = ls("fa_PREP_STDDEV_MINUTES", PREP_STDDEV_MINUTES);
   SIM_SPEED           = ls("fa_SIM_SPEED",           SIM_SPEED);
+  MAX_BATCH_SIZE      = ls("fa_MAX_BATCH_SIZE",      MAX_BATCH_SIZE);
   COURIER_SPEED       = (0.5214 * CANVAS_SIZE) / AVG_TRAVEL_MINUTES;
 
   function wire(sliderId, getValue, setValue, displayId, fmt) {
@@ -294,6 +304,15 @@ function init() {
     },
     "p-prep-stddev",
     (v) => "± " + v + " min",
+  );
+  wire(
+    "slider-batch",
+    () => MAX_BATCH_SIZE,
+    (v) => {
+      MAX_BATCH_SIZE = v;
+    },
+    "p-batch",
+    (v) => v,
   );
 
   const speedSlider = document.getElementById("speed-slider");
@@ -367,6 +386,76 @@ function normalRandom(mean, stddev) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  ROUTING HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+// Total Euclidean distance of a stop sequence starting from (x, y)
+function routeDistance(x, y, stops) {
+  let d = 0;
+  for (const s of stops) {
+    d += Math.hypot(s.x - x, s.y - y);
+    x = s.x;
+    y = s.y;
+  }
+  return d;
+}
+
+// All valid PDP stop orderings for a set of orders (pickup before delivery constraint)
+function validSequences(orders) {
+  const allStops = orders.flatMap((o) => [
+    { type: "pickup",   order: o, x: o.restaurant.x, y: o.restaurant.y },
+    { type: "delivery", order: o, x: o.destX,        y: o.destY        },
+  ]);
+
+  const results = [];
+
+  function gen(remaining, seq, pickedIds) {
+    if (remaining.length === 0) {
+      results.push(seq);
+      return;
+    }
+    for (let i = 0; i < remaining.length; i++) {
+      const stop = remaining[i];
+      if (stop.type === "delivery" && !pickedIds.has(stop.order.id)) continue;
+      const newPickedIds =
+        stop.type === "pickup"
+          ? new Set([...pickedIds, stop.order.id])
+          : pickedIds;
+      gen(
+        remaining.filter((_, j) => j !== i),
+        [...seq, stop],
+        newPickedIds,
+      );
+    }
+  }
+
+  gen(allStops, [], new Set());
+  return results;
+}
+
+// All combinations of exactly k elements from pool
+function* orderCombinations(pool, k) {
+  function* gen(start, current) {
+    if (current.length === k) { yield current; return; }
+    for (let i = start; i <= pool.length - (k - current.length); i++)
+      yield* gen(i + 1, [...current, pool[i]]);
+  }
+  yield* gen(0, []);
+}
+
+// Called after completing a stop; advances state and triggers matching when idle
+function advanceStop(c) {
+  if (c.stops.length === 0) {
+    c.state = "idle";
+    if (!c.retiring) tryMatch();
+    else couriers.splice(couriers.indexOf(c), 1);
+  } else {
+    c.state =
+      c.stops[0].type === "pickup" ? "en-route-pickup" : "en-route-delivery";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  SIMULATION STEP
 // ═══════════════════════════════════════════════════════════════════
 
@@ -383,24 +472,24 @@ function step(dtReal) {
   // Update each courier
   for (const c of couriers) {
     const wasOccupied = c.state !== "idle";
+    const carryCount = c.carrying.length;
 
     if (c.state === "en-route-pickup") {
-      if (moveToward(c, c.destX, c.destY, dt)) {
-        // Arrived at restaurant
-        if (simTime >= c.order.readyAt) {
-          pickUp(c);
-        } else {
-          c.state = "waiting-pickup"; // arrived early; wait for order
-        }
+      const s = c.stops[0];
+      if (moveToward(c, s.x, s.y, dt)) {
+        if (simTime >= s.order.readyAt) doPickup(c);
+        else c.state = "waiting-pickup";
       }
     } else if (c.state === "waiting-pickup") {
-      if (simTime >= c.order.readyAt) pickUp(c);
+      if (simTime >= c.stops[0].order.readyAt) doPickup(c);
     } else if (c.state === "en-route-delivery") {
-      if (moveToward(c, c.destX, c.destY, dt)) deliver(c);
+      if (moveToward(c, c.stops[0].x, c.stops[0].y, dt)) doDeliver(c);
     }
 
     // Accumulate occupied time using state at the START of this frame
     if (wasOccupied) totalOccupiedMin += dt;
+    if (carryCount >= 1) totalCarryingMin += dt;
+    if (carryCount > 1) totalMultiCarryMin += dt;
   }
 
   pruneRetiredRestaurants();
@@ -445,26 +534,23 @@ function spawnOrder(atTime) {
   tryMatch();
 }
 
-function pickUp(c) {
-  c.order.pickedUpAt = simTime;
-  totalDelayMin += Math.max(0, simTime - c.order.readyAt);
-  c.state = "en-route-delivery";
-  c.destX = c.order.destX;
-  c.destY = c.order.destY;
+function doPickup(c) {
+  const stop = c.stops.shift();
+  stop.order.pickedUpAt = simTime;
+  totalDelayMin += Math.max(0, simTime - stop.order.readyAt);
+  c.carrying.push(stop.order);
+  advanceStop(c);
 }
 
-function deliver(c) {
-  c.order.deliveredAt = simTime;
-  activeOrders.splice(activeOrders.indexOf(c.order), 1);
+function doDeliver(c) {
+  const stop = c.stops.shift();
+  const order = stop.order;
+  order.deliveredAt = simTime;
+  activeOrders.splice(activeOrders.indexOf(order), 1);
+  c.carrying.splice(c.carrying.indexOf(order), 1);
   completedOrders++;
-  if (c.retiring) {
-    couriers.splice(couriers.indexOf(c), 1);
-  } else {
-    c.state = "idle";
-    c.order = null;
-    tryMatch();
-  }
   pruneRetiredRestaurants();
+  advanceStop(c);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -494,9 +580,8 @@ function addCourier() {
     x: Math.random() * CANVAS_SIZE,
     y: Math.random() * CANVAS_SIZE,
     state: "idle",
-    order: null,
-    destX: 0,
-    destY: 0,
+    stops: [],
+    carrying: [],
     retiring: false,
   });
   tryMatch();
@@ -523,7 +608,7 @@ function pruneRetiredRestaurants() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  MATCHING  (greedy best-pair at each event)
+//  MATCHING  (greedy best-assignment at each event)
 // ═══════════════════════════════════════════════════════════════════
 
 function tryMatch() {
@@ -532,31 +617,37 @@ function tryMatch() {
   while (idle.length > 0 && unclaimedOrders.length > 0) {
     let bestScore = Infinity,
       bestCourier = null,
-      bestOrder = null;
+      bestOrders = null,
+      bestSeq = null;
+
+    // Always fill to the largest batch that fits; optimize which orders + which courier
+    const batchSize = Math.min(MAX_BATCH_SIZE, unclaimedOrders.length);
 
     for (const c of idle) {
-      for (const o of unclaimedOrders) {
-        // ETA circle radius: how far away a courier needs to be to arrive exactly on time
-        const radius = COURIER_SPEED * Math.max(0, o.readyAt - simTime);
-        const d = Math.hypot(c.x - o.restaurant.x, c.y - o.restaurant.y);
-        // Minimize |distance − radius|: prefer the courier that arrives closest to ready time
-        const score = Math.abs(d - radius);
-        if (score < bestScore) {
-          bestScore = score;
-          bestCourier = c;
-          bestOrder = o;
+      for (const subset of orderCombinations(unclaimedOrders, batchSize)) {
+        for (const seq of validSequences(subset)) {
+          const score = routeDistance(c.x, c.y, seq);
+          if (score < bestScore) {
+            bestScore = score;
+            bestCourier = c;
+            bestOrders = subset;
+            bestSeq = seq;
+          }
         }
       }
     }
 
-    // Assign best pair
-    bestOrder.courierId = bestCourier.id;
-    bestCourier.order = bestOrder;
-    bestCourier.state = "en-route-pickup";
-    bestCourier.destX = bestOrder.restaurant.x;
-    bestCourier.destY = bestOrder.restaurant.y;
-    activeOrders.push(bestOrder);
-    unclaimedOrders.splice(unclaimedOrders.indexOf(bestOrder), 1);
+    if (!bestCourier) break;
+
+    // Assign best (courier, order-set, sequence) triple
+    bestCourier.stops = bestSeq;
+    bestCourier.state =
+      bestSeq[0].type === "pickup" ? "en-route-pickup" : "en-route-delivery";
+    for (const o of bestOrders) {
+      o.courierId = bestCourier.id;
+      activeOrders.push(o);
+      unclaimedOrders.splice(unclaimedOrders.indexOf(o), 1);
+    }
     idle.splice(idle.indexOf(bestCourier), 1);
   }
 }
@@ -589,17 +680,14 @@ function draw() {
     ctx.setLineDash([]);
   }
 
-  // Route lines for assigned couriers
+  // Route polylines for assigned couriers
   for (const c of couriers) {
-    if (!c.order) continue;
-    const o = c.order;
-    const col = R_COLORS[o.restaurant.id % R_COLORS.length];
+    if (!c.stops.length && !c.carrying.length) continue;
+    const refOrder = c.stops.length ? c.stops[0].order : c.carrying[0];
+    const col = R_COLORS[refOrder.restaurant.id % R_COLORS.length];
     ctx.beginPath();
     ctx.moveTo(c.x, c.y);
-    if (c.state === "en-route-pickup" || c.state === "waiting-pickup") {
-      ctx.lineTo(o.restaurant.x, o.restaurant.y);
-    }
-    ctx.lineTo(o.destX, o.destY);
+    for (const s of c.stops) ctx.lineTo(s.x, s.y);
     ctx.strokeStyle = col + "44";
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
@@ -741,6 +829,13 @@ function updateStats() {
     const utilization = (totalOccupiedMin / (liveCouriers * simTime)) * 100;
     document.getElementById("v-util").textContent =
       utilization.toFixed(1) + "%";
+
+    const multiCarry =
+      totalCarryingMin > 0
+        ? (totalMultiCarryMin / totalCarryingMin) * 100
+        : 0;
+    document.getElementById("v-multicarry").textContent =
+      multiCarry.toFixed(1) + "%";
   }
 }
 
