@@ -379,9 +379,19 @@ function findBestRoute(
   }
   const pickedUpOrders = new Set<Order>(initialPickedUpOrders);
 
+  // Memoization cache: key = `${stopsEnd}:${pickupsInPre}`, value = best cost for this state
+  const memo = new Map<string, number>();
+
   function search(preCost: number, stopsEnd: number, pickupsInPre: number) {
     nodeCounter.count++;
     if (preCost >= best.cost) return;
+
+    // Check memoization cache
+    const cacheKey = `${stopsEnd}:${pickupsInPre}`;
+    if (memo.has(cacheKey) && (memo.get(cacheKey)! <= preCost)) {
+      return;
+    }
+    memo.set(cacheKey, preCost);
 
     if (stopsEnd === 0) {
       best.route = pre.clone();
