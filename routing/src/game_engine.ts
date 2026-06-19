@@ -16,6 +16,10 @@ export class Vector {
     return Math.hypot(this.x, this.y);
   }
 
+  distanceTo(other: Vector): number {
+    return Math.hypot(this.x - other.x, this.y - other.y);
+  }
+
   scale(n: number): Vector {
     return new Vector(this.x * n, this.y * n);
   }

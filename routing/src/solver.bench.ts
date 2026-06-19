@@ -71,12 +71,12 @@ const CONFIGS: {
   restaurants: number;
   geoCutoff: number;
 }[] = [
-  { couriers: 4, orders: 8, maxBatch: 4, restaurants: 5, geoCutoff: -1 },
-  { couriers: 4, orders: 8, maxBatch: 4, restaurants: 5, geoCutoff: -0.5 },
-  { couriers: 4, orders: 8, maxBatch: 4, restaurants: 5, geoCutoff: 0 },
-  { couriers: 4, orders: 12, maxBatch: 4, restaurants: 5, geoCutoff: -1 },
-  { couriers: 4, orders: 12, maxBatch: 4, restaurants: 5, geoCutoff: -0.5 },
-  { couriers: 4, orders: 12, maxBatch: 4, restaurants: 5, geoCutoff: 0 },
+  { couriers: 4, orders: 10, maxBatch: 4, restaurants: 5, geoCutoff: -1 },
+  { couriers: 4, orders: 10, maxBatch: 4, restaurants: 5, geoCutoff: -0.5 },
+  { couriers: 4, orders: 10, maxBatch: 4, restaurants: 5, geoCutoff: 0 },
+  { couriers: 4, orders: 15, maxBatch: 4, restaurants: 5, geoCutoff: -1 },
+  { couriers: 4, orders: 15, maxBatch: 4, restaurants: 5, geoCutoff: -0.5 },
+  { couriers: 4, orders: 15, maxBatch: 4, restaurants: 5, geoCutoff: 0 },
 ];
 
 for (const c of CONFIGS) {
