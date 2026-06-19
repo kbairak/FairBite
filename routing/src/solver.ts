@@ -367,7 +367,6 @@ function findBestRoute(
   const maxBatch = parameters.get("maxBatch");
   const durationWeight = parameters.get("durationWeight");
   const delayWeight = parameters.get("delayWeight");
-  const courierSpeedValue = courierSpeed();
 
   // Build the set of orders already picked up (carrying + pickups in initial pre)
   const initialPickedUpOrders = new Set<Order>(courier.carrying);
@@ -383,25 +382,6 @@ function findBestRoute(
   // Memoization cache: key = `${stopsEnd}:${pickupsInPre}`, value = best cost for this state
   const memo = new Map<string, number>();
 
-  // Branch-and-Bound: Estimate remaining cost using Euclidean distance + time lower bound
-  function estimateRemainingCost(pre: Route, remainingStops: Stop[]): number {
-    let cost = 0;
-    let lastPos = pre.length ? pre.at(-1)!.to : courier.position;
-    let lastTime = pre.length ? pre.at(-1)!.end : game.simTime;
-
-    for (const stop of remainingStops) {
-      const targetPos = stop.type === "pickup" ? stop.order.restaurant.position : stop.order.destination;
-      const distance = lastPos.distanceTo(targetPos);
-      const travelTime = distance / courierSpeedValue;
-      const arrivalTime = lastTime + travelTime;
-      const delay = Math.max(0, arrivalTime - stop.order.optimalTime);
-      cost += durationWeight * travelTime + delayWeight * delay;
-      lastPos = targetPos;
-      lastTime = arrivalTime;
-    }
-    return cost;
-  }
-
   function search(preCost: number, stopsEnd: number, pickupsInPre: number) {
     nodeCounter.count++;
     if (preCost >= best.cost) return;
@@ -413,24 +393,14 @@ function findBestRoute(
     }
     memo.set(cacheKey, preCost);
 
-    // Branch-and-Bound: Prune if lower bound exceeds best cost
-    const remainingStops = stops.slice(0, stopsEnd);
-    const lowerBound = estimateRemainingCost(pre, remainingStops);
-    if (preCost + lowerBound >= best.cost) {
-      return;
-    }
-
     if (stopsEnd === 0) {
       best.route = pre.clone();
       best.cost = preCost;
       return;
     }
 
-    // Sort remaining stops by earliest deadline to find good solutions faster
-    remainingStops.sort((a, b) => a.order.optimalTime - b.order.optimalTime);
-
     for (let i = 0; i < stopsEnd; i++) {
-      const stop = remainingStops[i];
+      const stop = stops[i];
       const isPickup = stop.type === "pickup";
 
       // Deliver validity: order must have been picked up

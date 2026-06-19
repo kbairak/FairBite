@@ -61,14 +61,14 @@ export class RouteElement {
       switch (this.type) {
         case "pickup":
           this._duration =
-            this.order.restaurant.position.distanceTo(this.from) / speed;
+            this.order.restaurant.position.sub(this.from).size() / speed;
           break;
         case "wait":
           this._duration =
             this.order.placedAt + this.order.prepTime - this.start;
           break;
         case "deliver":
-          this._duration = this.order.destination.distanceTo(this.from) / speed;
+          this._duration = this.order.destination.sub(this.from).size() / speed;
           break;
       }
     }
@@ -312,7 +312,7 @@ export class Order extends Node {
   get optimalTime() {
     return (
       this.readyAt +
-      this.destination.distanceTo(this.restaurant.position) / courierSpeed()
+      this.destination.sub(this.restaurant.position).size() / courierSpeed()
     );
   }
 
