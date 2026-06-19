@@ -262,6 +262,9 @@ export class Courier extends Node {
           if (restaurant.retiring && restaurant.orders.size === 0) {
             restaurant.destroy();
           }
+          (Node.game as MyGame).orderDelays.push(
+            Node.game.simTime - order.optimalTime,
+          );
           order.destroy();
           courier.route.splice(0, 1);
           outputs.set("v-completed", (p: number) => p + 1);
@@ -357,6 +360,7 @@ export class MyGame extends Game {
   public totalDelayTime = 0;
   public totalCourierTime = 0;
   public totalCourierActiveTime = 0;
+  public orderDelays: number[] = [];
 
   adjustRestaurants(v: number) {
     while (true) {
@@ -460,7 +464,11 @@ export class MyGame extends Game {
 
     this.totalOrdersCreated = 0;
     this.totalDelayTime = 0;
+    this.orderDelays = [];
     outputs.set("v-delay", "—");
+    outputs.set("v-delay-p50", "—");
+    outputs.set("v-delay-p90", "—");
+    outputs.set("v-delay-p99", "—");
     outputs.set("v-efficiency", "—");
     outputs.set("v-queued", "0");
     outputs.set("v-inflight", "0");
@@ -537,6 +545,17 @@ export class MyGame extends Game {
         "v-delay",
         `${(this.totalDelayTime / this.totalOrdersCreated).toFixed(2)} min`,
       );
+    }
+
+    this.orderDelays.sort((a, b) => a - b);
+    if (this.orderDelays.length) {
+      const p = (pct: number) => {
+        const i = Math.ceil((pct / 100) * this.orderDelays.length) - 1;
+        return this.orderDelays[Math.max(0, i)].toFixed(2);
+      };
+      outputs.set("v-delay-p50", `${p(50)} min`);
+      outputs.set("v-delay-p90", `${p(90)} min`);
+      outputs.set("v-delay-p99", `${p(99)} min`);
     }
   }
 }

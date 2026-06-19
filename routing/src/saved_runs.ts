@@ -32,7 +32,16 @@ const SHORT_LABELS: Record<string, string> = {
   geoCutoff: "GC",
 };
 
-const STAT_KEYS = ["v-time", "v-completed", "v-efficiency", "v-delay", "v-util"] as const;
+const STAT_KEYS = [
+  "v-time",
+  "v-completed",
+  "v-efficiency",
+  "v-delay",
+  "v-delay-p50",
+  "v-delay-p90",
+  "v-delay-p99",
+  "v-util",
+] as const;
 
 function getParamValues(): Record<string, number> {
   const obj: Record<string, number> = {};
@@ -97,15 +106,16 @@ export function renderRuns(container: HTMLElement): void {
   container.innerHTML = runs
     .map(
       (r) => `
-    <div class="saved-run" data-key="${r.key.replace(/"/g, "&quot;")}">
-      <div class="saved-run-key">${formatKey(r.params)}</div>
-      <div class="saved-run-metrics">${r.stats["v-time"]}  |  C: ${r.stats["v-completed"]}  |  Eff: ${r.stats["v-efficiency"]}  |  Del: ${r.stats["v-delay"]}  |  Util: ${r.stats["v-util"]}</div>
-      <div style="display:flex;gap:4px;margin-top:4px">
-        <button class="btn-sm" data-action="use">USE</button>
-        <button class="btn-sm" data-action="delete">DELETE</button>
-      </div>
-    </div>
+        <div class="saved-run" data-key="${r.key.replace(/"/g, "&quot;")}">
+          <div class="saved-run-key">${formatKey(r.params)}</div>
+          <div class="saved-run-metrics">${r.stats["v-time"]}  |  C: ${r.stats["v-completed"]}  |  Eff: ${r.stats["v-efficiency"]}  |  Del: ${r.stats["v-delay"]}  |  p50: ${r.stats["v-delay-p50"]}  |  p90: ${r.stats["v-delay-p90"]}  |  p99: ${r.stats["v-delay-p99"]}  |  Util: ${r.stats["v-util"]}</div>
+          <div style="display:flex;gap:4px;margin-top:4px">
+            <button class="btn-sm" data-action="use">USE</button>
+            <button class="btn-sm" data-action="delete">DELETE</button>
+          </div>
+        </div>
   `,
     )
     .join("");
 }
+
