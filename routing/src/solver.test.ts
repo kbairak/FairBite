@@ -26,7 +26,7 @@ vi.mock("./parameters", () => ({
   },
 }));
 
-import { Courier, MyGame, Order, Restaurant, RouteElement } from "./game";
+import { Courier, MyGame, Order, Restaurant } from "./game";
 import { Vector, Node } from "./game_engine";
 import { highsReady, tryMatch } from "./solver";
 
