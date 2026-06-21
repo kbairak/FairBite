@@ -389,7 +389,7 @@ which output variables to plot as graphs.
 You can run the playground by running:
 
 ```sh
-uvx --with plotly --with numpy streamlit run https://github.com/kbairak/OurFood/raw/refs/heads/main/docs/financials/playground.py
+uvx --with plotly --with numpy streamlit run https://github.com/kbairak/OurFood/raw/refs/heads/main/docs/financials/playgrounds/playground.py
 ```
 
 If you have [uv](https://docs.astral.sh/uv/) installed.
@@ -496,3 +496,115 @@ What definitely needs a Greek accountant:
 - How VAT is reported on the restaurant's share remittance
 - Whether the food's 13% VAT rate is the restaurant's liability or the
   platform's
+
+## Scenarios
+
+The following scenarios use adoption rates (restaurant adoption × order
+adoption) to determine orders per day. The remaining parameters use the same
+defaults as the playground:
+
+| Parameter                | Value                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| Avg order value          | €18                                                                                   |
+| Orders/courier/day       | 30 (or 15 for scenario C)                                                             |
+| Commission cap           | 30%                                                                                   |
+| Variable costs           | 5% of GMV                                                                             |
+| Courier wage + equipment | €2,245/month                                                                          |
+| Developers               | 2 × €4,281/month                                                                      |
+| Managers                 | 1 × €3,302/month                                                                      |
+| Opex                     | €1,904/month                                                                          |
+| Growth fund rate         | 5% of net surplus                                                                     |
+| Onboarding cost          | €320 / new courier (safety equipment, trunk; drawn from growth fund first, then cash) |
+
+The mapping from adoption to volume:
+
+```python
+orders_per_day = 1200 × restaurant_adoption × 20 × order_adoption
+```
+
+Onboarding costs are incurred each month as new couriers are hired. They are
+drawn from the growth fund together with all other expenses — the initial
+funding IS the growth fund, and the fund balance is the cooperative's single
+cash pool.
+
+### A: Word-of-mouth growth
+
+- **Restaurant adoption**: 5% → 8% → 12%
+- **Order adoption**: 5% → 7% → 10%
+- **Orders/day**: 60 → 134 → 288
+- **Growth after M3**: +40 orders/day per month
+- **Initial funding**: €150,000
+- **Break-even**: month 11
+- **Total cash required before B/E**: €61,732 (€52,598 operating deficit +
+  €9,134 onboarding)
+- **Growth fund at B/E**: €88,268
+
+| Mo       | Orders/d | Couriers | +New | OnbCost |      GMV |    KTLO | VarCosts | Reimburse |     Cash |
+| -------- | -------: | -------: | ---: | ------: | -------: | ------: | -------: | --------: | -------: |
+| 1        |       60 |      3.0 |  3.0 |    €953 |  €32,400 | €20,457 |   €1,620 |   €22,680 | €136,689 |
+| 2        |      134 |      6.7 |  3.7 |  €1,182 |  €72,576 | €28,752 |   €3,629 |   €50,803 | €124,899 |
+| 3        |      288 |     14.3 |  7.6 |  €2,441 | €155,520 | €45,876 |   €7,776 |  €108,864 | €115,462 |
+| 4        |      328 |     16.3 |  2.0 |    €636 | €177,120 | €50,336 |   €8,856 |  €123,984 | €108,771 |
+| 5        |      368 |     18.3 |  2.0 |    €636 | €198,720 | €54,795 |   €9,936 |  €139,104 | €103,020 |
+| 6        |      408 |     20.3 |  2.0 |    €636 | €220,320 | €59,254 |  €11,016 |  €154,224 |  €98,210 |
+| 7        |      448 |     22.2 |  2.0 |    €636 | €241,920 | €63,714 |  €12,096 |  €169,344 |  €94,341 |
+| 8        |      488 |     24.2 |  2.0 |    €636 | €263,520 | €68,173 |  €13,176 |  €184,464 |  €91,412 |
+| 9        |      528 |     26.2 |  2.0 |    €636 | €285,120 | €72,633 |  €14,256 |  €199,584 |  €89,423 |
+| 10       |      568 |     28.2 |  2.0 |    €636 | €306,720 | €77,092 |  €15,336 |  €214,704 |  €88,375 |
+| **11 ⬥** |      608 |     30.2 |  2.0 |    €636 | €328,320 | €81,552 |  €16,416 |  €229,824 |  €88,268 |
+| 12       |      648 |     32.2 |  2.0 |    €636 | €349,920 | €86,011 |  €17,496 |  €244,944 |  €89,101 |
+| 13       |      688 |     34.2 |  2.0 |    €636 | €371,520 | €90,471 |  €18,576 |  €260,064 |  €90,875 |
+
+⬥ Break-even
+
+The growth fund starts at €150k and declines each month as operating deficits
+and onboarding costs are paid. By month 11 it stands at €88k, and from month 12
+onwards the net surplus replenishes it faster than onboarding draws it down.
+
+### B: Moderate marketing push
+
+- **Restaurant adoption**: 8% → 14% → 18%
+- **Order adoption**: 7% → 10% → 14%
+- **Orders/day**: 134 → 336 → 605
+- **Growth after M3**: +60 orders/day per month
+- **Initial funding**: €100,000
+- **Break-even**: month 3
+- **Total cash required before B/E**: €25,633 (€16,475 operating deficit +
+  €9,158 onboarding)
+- **Growth fund at B/E**: €74,367
+
+| Mo      | Orders/d | Couriers | +New | OnbCost |      GMV |    KTLO | VarCosts | Reimburse |    Cash |
+| ------- | -------: | -------: | ---: | ------: | -------: | ------: | -------: | --------: | ------: |
+| 1       |      134 |      6.7 |  6.7 |  €2,136 |  €72,576 | €28,752 |   €3,629 |   €50,803 | €87,256 |
+| 2       |      336 |     16.7 | 10.0 |  €3,204 | €181,440 | €51,227 |   €9,072 |  €127,008 | €78,185 |
+| **3 ⬥** |      605 |     30.0 | 13.3 |  €4,272 | €326,592 | €81,195 |  €16,330 |  €228,614 | €74,367 |
+| 4       |      665 |     33.0 |  3.0 |    €953 | €358,992 | €87,884 |  €17,950 |  €251,294 | €75,277 |
+| 5       |      725 |     36.0 |  3.0 |    €953 | €391,392 | €94,573 |  €19,570 |  €273,974 | €77,598 |
+
+⬥ Break-even
+
+The growth fund starts at €100k and drops to €74k by break-even, with heavy
+onboarding (month 3 alone: €4,272 for 13 new couriers). From month 4 the net
+surplus exceeds onboarding draws and the fund begins growing again.
+
+### C: Unfavourable economics (low courier efficiency)
+
+- **Adoption**: Same as scenario A (word-of-mouth)
+- **Orders/courier/day**: 15 (instead of 30)
+- **Growth after M3**: +40 orders/day per month
+- **Initial funding**: €150,000
+- **Result**: Deficit grows with volume. Growth fund exhausted in month 5
+  (€136,790 burned).
+
+| Mo  | Orders/d | Couriers | +New | OnbCost |      GMV |    KTLO | VarCosts | Reimburse |     Cash |
+| --- | -------: | -------: | ---: | ------: | -------: | ------: | -------: | --------: | -------: |
+| 1   |       60 |      6.0 |  6.0 |  €1,907 |  €32,400 | €27,146 |   €1,620 |   €22,680 | €129,047 |
+| 2   |      134 |     13.3 |  7.4 |  €2,365 |  €72,576 | €43,736 |   €3,629 |   €50,803 | €101,091 |
+| 3   |      288 |     28.6 | 15.3 |  €4,882 | €155,520 | €77,984 |   €7,776 |  €108,864 |  €57,105 |
+| 4   |      328 |     32.6 |  4.0 |  €1,271 | €177,120 | €86,903 |   €8,856 |  €123,984 |  €13,210 |
+| 5   |      368 |     36.5 |  4.0 |  €1,271 | €198,720 | €95,822 |   €9,936 |  €139,104 |    ⚠ Out |
+
+With low courier efficiency (15 orders/courier/day), each new courier burns more
+cash than they generate. Onboarding costs accelerate the cash depletion: month 3
+alone adds €4,882 for 15 new helmets, trunks and vests, on top of a €39,104
+operating deficit. All €150k of the growth fund is exhausted by month 5.
